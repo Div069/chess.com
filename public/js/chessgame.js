@@ -1,10 +1,14 @@
 const socket = io();
 const chess = new Chess();
 const boardElement = document.querySelector(".chessboard");
+const chatForm = document.getElementById("chatForm");
+const chatInput = document.getElementById("chatInput");
+const chatMessages = document.getElementById("chatMessages");
 
 let draggedPiece = null;
 let sourceSquare = null;
 let playerRole = null;
+let currentRoom = null;
 
 const renderBoard = () => {
   const board = chess.board();
@@ -77,7 +81,7 @@ const handleMove = (source, target) => {
     to: String.fromCharCode(97 + target.col) + (8 - target.row),
     promotion: "q",
   };
-  socket.emit("move", move);
+  socket.emit("move", move, currentRoom);
 };
 
 const getPieceUnicode = (piece) => {
@@ -99,22 +103,30 @@ const getPieceUnicode = (piece) => {
   return unicodePieces[piece.type] || "";
 };
 
-socket.on("playerRole", function (role) {
-  playerRole = role;
-  renderBoard();
+socket.on("waitingForOpponent", function () {
+  document.getElementById("waitingScreen").style.display = "flex";
+  document.getElementById("gameScreen").style.display = "none";
 });
 
-socket.on("spectatorRole", function () {
-  playerRole = null;
-  renderBoard();
+socket.on("startGame", function (role, roomID) {
+  playerRole = role;
+  currentRoom = roomID;
+
+  document.getElementById("waitingMessage").textContent = "You are playing as " + (role === "w" ? "White" : "Black");
+
+  setTimeout(() => {
+    document.getElementById("waitingScreen").style.display = "none";
+    document.getElementById("gameScreen").style.display = "flex";
+    renderBoard();
+  }, 2000);
 });
 
 socket.on("invalidMove", function (move) {
-  alert("Invalid move ");
+  alert("Invalid move!");
 });
 
-socket.on("gameOver", function (winner) {
-  alert("Game over! " + winner + " wins!");
+socket.on("gameOver", function () {
+  alert("Game over! Opponent disconnected.");
 });
 
 socket.on("boardState", function (fen) {
@@ -125,6 +137,38 @@ socket.on("boardState", function (fen) {
 socket.on("move", function (move) {
   chess.move(move);
   renderBoard();
+});
+
+socket.on("check", function (turn) {
+  const checkMessage = turn === playerRole ? "You are in check!" : "Your opponent is in check!";
+  alert(checkMessage);
+});
+
+socket.on("checkmate", function (result) {
+  if (result === "win") {
+    window.location.href = "/win";
+  } else if (result === "lose") {
+    window.location.href = "/lose";
+  }
+});
+
+// Handle sending chat messages
+chatForm.addEventListener("submit", function(e) {
+  e.preventDefault();
+  if (chatInput.value) {
+    const message = { text: chatInput.value, sender: playerRole };
+    socket.emit("chatMessage", message, currentRoom);
+    chatInput.value = "";
+  }
+});
+
+// Handle receiving chat messages
+socket.on("chatMessage", function(msg) {
+  const sender = msg.sender === playerRole ? "You" : "Player";
+  const item = document.createElement("p");
+  item.textContent = `${sender}: ${msg.text}`;
+  chatMessages.appendChild(item);
+  chatMessages.scrollTop = chatMessages.scrollHeight; // Auto-scroll to the bottom
 });
 
 renderBoard();
